@@ -3,6 +3,26 @@ import pandas as pd
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
+# 1. Configure the page to wide mode
+st.set_page_config(page_title="Inventory Management Database", layout="wide")
+
+# 2. Inject Custom CSS to expand the layout and reduce those large margins
+st.markdown(
+    """
+    <style>
+        /* Force the page container to take up 96% of the screen and reduce side padding */
+        .block-container {
+            padding-top: 1.5rem !important;
+            padding-bottom: 2rem !important;
+            padding-left: 2rem !important;
+            padding-right: 2rem !important;
+            max-width: 96% !important;
+        }
+    </style>
+""",
+    unsafe_allow_html=True,
+)
+
 
 # --- PASSWORD PROTECTION FUNCTION ---
 def check_password():
@@ -60,7 +80,7 @@ if "inventory_df" not in st.session_state:
         else:
             raw_df.columns = [str(c).strip() for c in raw_df.columns]
 
-        # --- FIX 1: Convert numerical columns to integers ---
+        # Convert numerical columns to integers to avoid decimals
         raw_df["ID"] = pd.to_numeric(raw_df["ID"], errors="coerce").fillna(0).astype(int)
         raw_df["Quantity"] = (
             pd.to_numeric(raw_df["Quantity"], errors="coerce").fillna(0).astype(int)
@@ -120,9 +140,6 @@ st.subheader("Current Inventory")
 if not df.empty:
     today = datetime.now().date()
 
-    # --- FIX 2: Dark Mode Friendly Colors ---
-    # We explicitly define BOTH background-color and a dark text color (color)
-    # This prevents Streamlit from rendering white text on light colored backgrounds.
     def highlight_row(row):
         exp_str = str(row["Expiration Date"]).strip()
         if exp_str and exp_str != "nan" and exp_str != "":
@@ -143,8 +160,7 @@ if not df.empty:
                 pass
         return [""] * len(row)
 
-    # --- FIX 3: Hide Decimals in Table ---
-    # We use format() to force ID and Quantity to display as plain integers
+    # Format numbers to hide decimals
     styled_df = df.style.format({"ID": "{:.0f}", "Quantity": "{:.0f}"}).apply(
         highlight_row, axis=1
     )
