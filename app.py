@@ -1,3 +1,4 @@
+
 from datetime import datetime
 import pandas as pd
 import streamlit as st
@@ -10,9 +11,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 
 # Read data from the Google Sheet
-# We set ttl=0 so that the app re-reads fresh data every time we write to the sheet
 def get_data():
-    return conn.read(ttl=0)
+    return conn.read(ttl="10m")  # Keeps cache for 10 minutes unless cleared
 
 
 df = get_data()
@@ -66,6 +66,9 @@ with st.sidebar.form("add_form", clear_on_submit=True):
             # Write the updated DataFrame back to Google Sheets
             conn.update(data=updated_df)
 
+            # --- THE FIX: Clear Streamlit's cache to force a fresh reload ---
+            st.cache_data.clear()
+
             st.sidebar.success(f"Added {name} successfully!")
             st.rerun()
         else:
@@ -108,6 +111,9 @@ if not df.empty:
 
         # Write the updated DataFrame back to Google Sheets
         conn.update(data=updated_df)
+
+        # --- THE FIX: Clear Streamlit's cache to force a fresh reload ---
+        st.cache_data.clear()
 
         st.success(f"Deleted Item ID {delete_id}!")
         st.rerun()
