@@ -60,6 +60,12 @@ if "inventory_df" not in st.session_state:
         else:
             raw_df.columns = [str(c).strip() for c in raw_df.columns]
 
+        # --- FIX 1: Convert numerical columns to integers ---
+        raw_df["ID"] = pd.to_numeric(raw_df["ID"], errors="coerce").fillna(0).astype(int)
+        raw_df["Quantity"] = (
+            pd.to_numeric(raw_df["Quantity"], errors="coerce").fillna(0).astype(int)
+        )
+
         st.session_state["inventory_df"] = raw_df
 
 df = st.session_state["inventory_df"]
@@ -79,6 +85,7 @@ with st.sidebar.form("add_form", clear_on_submit=True):
         if name:
             exp_date_str = exp_date.strftime("%Y-%m-%d") if exp_date else ""
 
+            # Ensure ID remains an integer
             new_id = (
                 int(df["ID"].max() + 1)
                 if not df.empty and pd.notna(df["ID"].max())
@@ -88,9 +95,9 @@ with st.sidebar.form("add_form", clear_on_submit=True):
             new_row = pd.DataFrame(
                 [
                     {
-                        "ID": new_id,
+                        "ID": int(new_id),
                         "Item Name": name,
-                        "Quantity": qty,
+                        "Quantity": int(qty),
                         "Location": location,
                         "Expiration Date": exp_date_str,
                     }
@@ -113,6 +120,9 @@ st.subheader("Current Inventory")
 if not df.empty:
     today = datetime.now().date()
 
+    # --- FIX 2: Dark Mode Friendly Colors ---
+    # We explicitly define BOTH background-color and a dark text color (color)
+    # This prevents Streamlit from rendering white text on light colored backgrounds.
     def highlight_row(row):
         exp_str = str(row["Expiration Date"]).strip()
         if exp_str and exp_str != "nan" and exp_str != "":
@@ -120,14 +130,25 @@ if not df.empty:
                 exp_date = datetime.strptime(exp_str, "%Y-%m-%d").date()
                 days_left = (exp_date - today).days
                 if days_left < 0:
-                    return ["background-color: #ffcccc"] * len(row)
+                    # Soft Red Background, Dark Red Text
+                    return [
+                        "background-color: #f8d7da; color: #721c24; font-weight: bold;"
+                    ] * len(row)
                 elif days_left <= 30:
-                    return ["background-color: #ffe0b2"] * len(row)
+                    # Soft Yellow/Orange Background, Dark Brown Text
+                    return [
+                        "background-color: #fff3cd; color: #856404; font-weight: bold;"
+                    ] * len(row)
             except ValueError:
                 pass
         return [""] * len(row)
 
-    styled_df = df.style.apply(highlight_row, axis=1)
+    # --- FIX 3: Hide Decimals in Table ---
+    # We use format() to force ID and Quantity to display as plain integers
+    styled_df = df.style.format({"ID": "{:.0f}", "Quantity": "{:.0f}"}).apply(
+        highlight_row, axis=1
+    )
+
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
     # Deletion Section
@@ -135,7 +156,7 @@ if not df.empty:
     delete_id = st.selectbox(
         "Select an Item ID to Delete",
         df["ID"].tolist(),
-        format_func=lambda x: f"ID {x}",
+        format_func=lambda x: f"ID {int(x)}",  # Force integer formatting in dropdown
     )
     if st.button("Delete Selected", type="primary"):
         updated_df = df[df["ID"] != delete_id]
