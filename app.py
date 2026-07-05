@@ -90,7 +90,7 @@ if "inventory_df" not in st.session_state:
 
 df = st.session_state["inventory_df"]
 
-st.title("📦 Supply & Inventory Manager (Google Sheets)")
+st.title("📦 Inventory Management Database")
 
 # Sidebar for entering new items
 st.sidebar.header("Add New Supply")
