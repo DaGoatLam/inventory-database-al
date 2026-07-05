@@ -1,4 +1,3 @@
-
 from datetime import datetime
 import pandas as pd
 import streamlit as st
@@ -9,25 +8,30 @@ st.set_page_config(page_title="Supply Manager (Sheets)", layout="wide")
 # Establish connection to Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# --- LIGHTNING-FAST SESSION STATE CACHING ---
+# If the data is not in the server's local memory yet, load it once
+if "inventory_df" not in st.session_state:
+    with st.spinner("Connecting to Google Sheets..."):
+        # Read raw data using Streamlit cache
+        raw_df = conn.read(ttl="1h")
 
-# Read data from the Google Sheet
-def get_data():
-    return conn.read(ttl="10m")  # Keeps cache for 10 minutes unless cleared
+        # Clean up columns and ensure standard format
+        expected_cols = ["ID", "Item Name", "Quantity", "Location", "Expiration Date"]
+        if raw_df.empty or len(raw_df.columns) == 0:
+            raw_df = pd.DataFrame(columns=expected_cols)
+        else:
+            raw_df.columns = [str(c).strip() for c in raw_df.columns]
 
+        # Save to fast local memory
+        st.session_state["inventory_df"] = raw_df
 
-df = get_data()
+# Always read from the fast local memory
+df = st.session_state["inventory_df"]
 
-# Ensure standard columns are present
-expected_cols = ["ID", "Item Name", "Quantity", "Location", "Expiration Date"]
-if df.empty or len(df.columns) == 0:
-    df = pd.DataFrame(columns=expected_cols)
-else:
-    # Clean up column names to avoid trailing spaces
-    df.columns = [str(c).strip() for c in df.columns]
-
+# --- WEB INTERFACE ---
 st.title("📦 Supply & Inventory Manager (Google Sheets)")
 
-# Sidebar for entering new items
+# Sidebar for entering new items (now completely lag-free to type in!)
 st.sidebar.header("Add New Supply")
 with st.sidebar.form("add_form", clear_on_submit=True):
     name = st.text_input("Item Name")
@@ -47,7 +51,7 @@ with st.sidebar.form("add_form", clear_on_submit=True):
                 else 1
             )
 
-            # Create new row DataFrame
+            # Create new row
             new_row = pd.DataFrame(
                 [
                     {
@@ -60,13 +64,16 @@ with st.sidebar.form("add_form", clear_on_submit=True):
                 ]
             )
 
-            # Append the new row to existing DataFrame
+            # Append the new row locally
             updated_df = pd.concat([df, new_row], ignore_index=True)
 
-            # Write the updated DataFrame back to Google Sheets
+            # 1. Update the cloud Google Sheet
             conn.update(data=updated_df)
 
-            # --- THE FIX: Clear Streamlit's cache to force a fresh reload ---
+            # 2. Update local fast memory instantly
+            st.session_state["inventory_df"] = updated_df
+
+            # 3. Clear Streamlit background cache for other browsers/users
             st.cache_data.clear()
 
             st.sidebar.success(f"Added {name} successfully!")
@@ -82,7 +89,6 @@ if not df.empty:
 
     def highlight_row(row):
         exp_str = str(row["Expiration Date"]).strip()
-        # Skip empty rows or null values
         if exp_str and exp_str != "nan" and exp_str != "":
             try:
                 exp_date = datetime.strptime(exp_str, "%Y-%m-%d").date()
@@ -98,7 +104,7 @@ if not df.empty:
     styled_df = df.style.apply(highlight_row, axis=1)
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
-    # Deletion Section
+    # Deletion Section (now instant to interact with)
     st.subheader("Manage Inventory")
     delete_id = st.selectbox(
         "Select an Item ID to Delete",
@@ -106,13 +112,16 @@ if not df.empty:
         format_func=lambda x: f"ID {x}",
     )
     if st.button("Delete Selected", type="primary"):
-        # Filter out the deleted row
+        # Filter out the deleted row locally
         updated_df = df[df["ID"] != delete_id]
 
-        # Write the updated DataFrame back to Google Sheets
+        # 1. Update the cloud Google Sheet
         conn.update(data=updated_df)
 
-        # --- THE FIX: Clear Streamlit's cache to force a fresh reload ---
+        # 2. Update local fast memory instantly
+        st.session_state["inventory_df"] = updated_df
+
+        # 3. Clear Streamlit background cache
         st.cache_data.clear()
 
         st.success(f"Deleted Item ID {delete_id}!")
