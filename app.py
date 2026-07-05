@@ -3,35 +3,70 @@ import pandas as pd
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
-st.set_page_config(page_title="Supply Manager (Sheets)", layout="wide")
+
+# --- PASSWORD PROTECTION FUNCTION ---
+def check_password():
+    """Returns True if the user entered the correct password."""
+
+    def password_entered():
+        """Checks whether the entered password is correct."""
+        if st.session_state["password_input"] == st.secrets["password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password_input"]  # Clean up memory
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # Show input field if first-time load
+        st.text_input(
+            "Please enter the password to access the Inventory:",
+            type="password",
+            on_change=password_entered,
+            key="password_input",
+        )
+        return False
+    elif not st.session_state["password_correct"]:
+        # Show input field + error if password was wrong
+        st.text_input(
+            "Please enter the password to access the Inventory:",
+            type="password",
+            on_change=password_entered,
+            key="password_input",
+        )
+        st.error("😕 Password incorrect. Please try again.")
+        return False
+    else:
+        # Password was correct, proceed to app
+        return True
+
+
+# Run the password check. If it fails, stop execution here.
+if not check_password():
+    st.stop()
+
+# --- IF PASSWORD IS CORRECT, RENDER THE REST OF THE APP ---
 
 # Establish connection to Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- LIGHTNING-FAST SESSION STATE CACHING ---
-# If the data is not in the server's local memory yet, load it once
+# Load data into local memory
 if "inventory_df" not in st.session_state:
     with st.spinner("Connecting to Google Sheets..."):
-        # Read raw data using Streamlit cache
         raw_df = conn.read(ttl="1h")
 
-        # Clean up columns and ensure standard format
         expected_cols = ["ID", "Item Name", "Quantity", "Location", "Expiration Date"]
         if raw_df.empty or len(raw_df.columns) == 0:
             raw_df = pd.DataFrame(columns=expected_cols)
         else:
             raw_df.columns = [str(c).strip() for c in raw_df.columns]
 
-        # Save to fast local memory
         st.session_state["inventory_df"] = raw_df
 
-# Always read from the fast local memory
 df = st.session_state["inventory_df"]
 
-# --- WEB INTERFACE ---
 st.title("📦 Supply & Inventory Manager (Google Sheets)")
 
-# Sidebar for entering new items (now completely lag-free to type in!)
+# Sidebar for entering new items
 st.sidebar.header("Add New Supply")
 with st.sidebar.form("add_form", clear_on_submit=True):
     name = st.text_input("Item Name")
@@ -44,14 +79,12 @@ with st.sidebar.form("add_form", clear_on_submit=True):
         if name:
             exp_date_str = exp_date.strftime("%Y-%m-%d") if exp_date else ""
 
-            # Generate a new unique numerical ID
             new_id = (
                 int(df["ID"].max() + 1)
                 if not df.empty and pd.notna(df["ID"].max())
                 else 1
             )
 
-            # Create new row
             new_row = pd.DataFrame(
                 [
                     {
@@ -64,16 +97,9 @@ with st.sidebar.form("add_form", clear_on_submit=True):
                 ]
             )
 
-            # Append the new row locally
             updated_df = pd.concat([df, new_row], ignore_index=True)
-
-            # 1. Update the cloud Google Sheet
             conn.update(data=updated_df)
-
-            # 2. Update local fast memory instantly
             st.session_state["inventory_df"] = updated_df
-
-            # 3. Clear Streamlit background cache for other browsers/users
             st.cache_data.clear()
 
             st.sidebar.success(f"Added {name} successfully!")
@@ -94,9 +120,9 @@ if not df.empty:
                 exp_date = datetime.strptime(exp_str, "%Y-%m-%d").date()
                 days_left = (exp_date - today).days
                 if days_left < 0:
-                    return ["background-color: #ffcccc"] * len(row)  # Red
+                    return ["background-color: #ffcccc"] * len(row)
                 elif days_left <= 30:
-                    return ["background-color: #ffe0b2"] * len(row)  # Yellow
+                    return ["background-color: #ffe0b2"] * len(row)
             except ValueError:
                 pass
         return [""] * len(row)
@@ -104,7 +130,7 @@ if not df.empty:
     styled_df = df.style.apply(highlight_row, axis=1)
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
-    # Deletion Section (now instant to interact with)
+    # Deletion Section
     st.subheader("Manage Inventory")
     delete_id = st.selectbox(
         "Select an Item ID to Delete",
@@ -112,16 +138,9 @@ if not df.empty:
         format_func=lambda x: f"ID {x}",
     )
     if st.button("Delete Selected", type="primary"):
-        # Filter out the deleted row locally
         updated_df = df[df["ID"] != delete_id]
-
-        # 1. Update the cloud Google Sheet
         conn.update(data=updated_df)
-
-        # 2. Update local fast memory instantly
         st.session_state["inventory_df"] = updated_df
-
-        # 3. Clear Streamlit background cache
         st.cache_data.clear()
 
         st.success(f"Deleted Item ID {delete_id}!")
